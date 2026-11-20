@@ -1,0 +1,29 @@
+name: Compilar DashGhostMod
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Baixar código do repositório
+      uses: actions/checkout@v4
+
+    - name: Configurar .NET 6
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 6.0.x
+
+    - name: Compilar DLL
+      run: dotnet build DashGhostMod.csproj -c Release
+
+    - name: Salvar DashGhostMod.dll como Artefato
+      uses: actions/upload-artifact@v4
+      with:
+        name: DashGhostMod-DLL
+        path: bin/Release/net6.0/DashGhostMod.dll
+        
