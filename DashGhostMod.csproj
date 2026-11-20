@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>DashGhostMod</AssemblyName>
+    <Description>Mod de chat privado /role para mortos e zoom de pinça 10x para o SunDash</Description>
+    <Version>1.0.0</Version>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+    <RestoreAdditionalProjectSources>
+      https://api.nuget.org/v3/index.json;
+      https://nuget.bepinex.dev/v3/index.json;
+      https://nuget.samboy.dev/v3/index.json
+    </RestoreAdditionalProjectSources>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.*" IncludeAssets="compile" />
+    <PackageReference Include="AmongUs.GameLibs.Steam" Version="2025.3.31" PrivateAssets="all" />
+    <PackageReference Include="BepInEx.IL2CPP.MSBuild" Version="2.0.1" PrivateAssets="all" />
+  </ItemGroup>
+</Project>
