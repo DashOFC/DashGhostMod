@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace DashGhostMod
 {
-    [BepInPlugin("com.dash.ghostmod", "DashGhostMod", "1.1.0")]
+    [BepInPlugin("com.dash.ghostmod", "DashGhostMod", "1.2.0")]
     public class Plugin : BasePlugin
     {
         public static bool ZoomFantasmaAtivo = true;
@@ -15,7 +15,6 @@ namespace DashGhostMod
         public const float ZoomMinimo = 1f;
         public const float ZoomMaximo = 10f;
         public const float VelocidadeScrollPC = 1.2f;
-        public const float SensibilidadePincaMobile = 0.015f;
 
         private static float tamanhoCameraOriginal = -1f;
 
@@ -23,7 +22,7 @@ namespace DashGhostMod
         {
             var harmony = new Harmony("com.dash.ghostmod");
             harmony.PatchAll();
-            Log.LogInfo("DashGhostMod v1.1.0 (PC + Mobile) carregado!");
+            Log.LogInfo("DashGhostMod v1.2.0 (PC Scroll) carregado!");
         }
 
         public static bool EstaMorto()
@@ -71,9 +70,7 @@ namespace DashGhostMod
                 return;
             }
 
-            bool alterouZoom = false;
-
-            // 1. Controle no PC: Scroll do Mouse
+            // Controle exclusivo pelo Scroll do Mouse
             float scroll = Input.mouseScrollDelta.y;
             if (Mathf.Approximately(scroll, 0f))
             {
@@ -82,35 +79,8 @@ namespace DashGhostMod
 
             if (!Mathf.Approximately(scroll, 0f))
             {
-                // Scroll para baixo (negativo) afasta a câmera (aumenta o alcance de visão)
-                // Scroll para cima (positivo) aproxima a câmera
+                // Scroll para baixo (negativo) afasta a câmera; para cima (positivo) aproxima
                 NivelZoomAtual -= scroll * VelocidadeScrollPC;
-                alterouZoom = true;
-            }
-
-            // 2. Controle no Celular: Pinça com 2 dedos
-            if (Input.touchCount == 2)
-            {
-                Touch toque0 = Input.GetTouch(0);
-                Touch toque1 = Input.GetTouch(1);
-
-                Vector2 posAnterior0 = toque0.position - toque0.deltaPosition;
-                Vector2 posAnterior1 = toque1.position - toque1.deltaPosition;
-
-                float distAnterior = (posAnterior0 - posAnterior1).magnitude;
-                float distAtual = (toque0.position - toque1.position).magnitude;
-                float diferenca = distAtual - distAnterior;
-
-                if (!Mathf.Approximately(diferenca, 0f))
-                {
-                    // Fechar os dedos afasta a câmera; abrir aproxima
-                    NivelZoomAtual -= diferenca * SensibilidadePincaMobile;
-                    alterouZoom = true;
-                }
-            }
-
-            if (alterouZoom)
-            {
                 NivelZoomAtual = Mathf.Clamp(NivelZoomAtual, ZoomMinimo, ZoomMaximo);
                 AplicarZoomNaCamera();
             }
@@ -124,14 +94,7 @@ namespace DashGhostMod
             if (tamanhoCameraOriginal <= 0f)
                 tamanhoCameraOriginal = Camera.main.orthographicSize;
 
-            float novoTamanho = tamanhoCameraOriginal * NivelZoomAtual;
-            Camera.main.orthographicSize = novoTamanho;
-
-            if (HudManager.Instance != null && HudManager.Instance.UICamera != null)
-            {
-                // Mantém a UI no tamanho normal para os botões e o chat não encolherem
-                HudManager.Instance.ShadowQuad?.gameObject.SetActive(NivelZoomAtual <= 1.05f);
-            }
+            Camera.main.orthographicSize = tamanhoCameraOriginal * NivelZoomAtual;
         }
 
         public static void MostrarMensagemLocal(ChatController chat, string mensagem)
@@ -153,22 +116,13 @@ namespace DashGhostMod
         }
     }
 
-    // Evita que o fantasma fique deslizando/andando sozinho enquanto faz pinça no celular
-    [HarmonyPatch(typeof(PlayerPhysics), nameof(PlayerPhysics.FixedUpdate))]
-    public static class GhostMovementStabilizerPatch
+    // Garante reset total da câmera ao abrir ou fechar a votação
+    [HarmonyPatch(typeof(MeetingHud), nameof(MeetingHud.Close))]
+    public static class MeetingHudCloseZoomPatch
     {
-        public static bool Prefix(PlayerPhysics __instance)
+        public static void Postfix()
         {
-            if (__instance == null || __instance.myPlayer == null || !__instance.myPlayer.AmOwner)
-                return true;
-
-            if (Plugin.EstaMorto() && Input.touchCount >= 2 && __instance.body != null)
-            {
-                __instance.body.velocity = Vector2.zero;
-                return false;
-            }
-
-            return true;
+            Plugin.ResetarZoom();
         }
     }
 
@@ -211,7 +165,7 @@ namespace DashGhostMod
             {
                 Plugin.MostrarMensagemLocal(
                     __instance,
-                    "<b>[DashGhostMod]</b> Zoom de fantasma ativado! Use o <b>scroll do mouse</b> (PC) ou <b>pinça na tela</b> (Celular)."
+                    "<b>[DashGhostMod]</b> Zoom de fantasma ativado! Use o <b>scroll do mouse</b> para aproximar ou afastar."
                 );
             }
 
