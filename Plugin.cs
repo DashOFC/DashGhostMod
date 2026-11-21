@@ -88,11 +88,6 @@ namespace DashGhostMod
             {
                 local.MyPhysics.body.velocity = Vector2.zero;
             }
-
-            if (DestroyableSingleton<VirtualJoystick>.Instance != null)
-            {
-                DestroyableSingleton<VirtualJoystick>.Instance.Stop();
-            }
         }
     }
 
@@ -162,8 +157,6 @@ namespace DashGhostMod
             bool emTask = Minigame.Instance != null;
             bool chatAberto = __instance.Chat != null && __instance.Chat.IsOpenOrOpening;
 
-            // Zoom funciona para qualquer jogador quando estiver morto (na sua sala ou partida livre),
-            // resetando ao normal apenas em reunião, task, chat aberto ou se estiver vivo
             if (!estaMorto || emReuniao || emTask || chatAberto)
             {
                 estavaEmPinca = false;
