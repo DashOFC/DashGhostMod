@@ -78,6 +78,23 @@ namespace DashGhostMod
             writer.Write(mensagem);
             AmongUsClient.Instance.FinishRpcImmediately(writer);
         }
+
+        // Destrava movimento fantasma caso o toque de pinça fique preso
+        public static void PararMovimentoFantasma()
+        {
+            var local = PlayerControl.LocalPlayer;
+            if (local == null) return;
+
+            if (local.MyPhysics != null && local.MyPhysics.body != null)
+            {
+                local.MyPhysics.body.velocity = Vector2.zero;
+            }
+
+            if (DestroyableSingleton<VirtualJoystick>.Instance != null)
+            {
+                DestroyableSingleton<VirtualJoystick>.Instance.Stop();
+            }
+        }
     }
 
     [HarmonyPatch(typeof(ChatController), nameof(ChatController.SendChat))]
@@ -135,6 +152,7 @@ namespace DashGhostMod
         private const float ZoomPadrao = 3.0f;
         private const float ZoomMaximo = 30.0f;
         private static float zoomAtual = ZoomPadrao;
+        private static bool estavaEmPinca = false;
 
         public static void Postfix(HudManager __instance)
         {
@@ -148,6 +166,7 @@ namespace DashGhostMod
 
             if (!estaMorto || !Plugin.EhSalaDoDash() || emReuniao || emTask || chatAberto)
             {
+                estavaEmPinca = false;
                 if (Math.Abs(zoomAtual - ZoomPadrao) > 0.01f)
                 {
                     zoomAtual = ZoomPadrao;
@@ -156,10 +175,19 @@ namespace DashGhostMod
                 return;
             }
 
-            if (Input.touchCount == 2)
+            if (Input.touchCount >= 2)
             {
                 Touch dedo0 = Input.GetTouch(0);
                 Touch dedo1 = Input.GetTouch(1);
+
+                // Se algum dos dois dedos levantou ou foi cancelado, encerra a pinça e zera velocidade residual
+                if (dedo0.phase == TouchPhase.Ended || dedo0.phase == TouchPhase.Canceled ||
+                    dedo1.phase == TouchPhase.Ended || dedo1.phase == TouchPhase.Canceled)
+                {
+                    estavaEmPinca = false;
+                    Plugin.PararMovimentoFantasma();
+                    return;
+                }
 
                 Vector2 posAnterior0 = dedo0.position - dedo0.deltaPosition;
                 Vector2 posAnterior1 = dedo1.position - dedo1.deltaPosition;
@@ -169,13 +197,25 @@ namespace DashGhostMod
 
                 float diferenca = distanciaAnterior - distanciaAtual;
 
+                estavaEmPinca = true;
                 zoomAtual = Mathf.Clamp(zoomAtual + diferenca * 0.03f, ZoomPadrao, ZoomMaximo);
                 AplicarZoom(zoomAtual);
+                Plugin.PararMovimentoFantasma();
             }
-            else if (Math.Abs(Input.mouseScrollDelta.y) > 0.01f)
+            else
             {
-                zoomAtual = Mathf.Clamp(zoomAtual - Input.mouseScrollDelta.y * 1.5f, ZoomPadrao, ZoomMaximo);
-                AplicarZoom(zoomAtual);
+                // Ao soltar os dedos da pinça, garante que o personagem não continue deslizando sozinho
+                if (estavaEmPinca)
+                {
+                    estavaEmPinca = false;
+                    Plugin.PararMovimentoFantasma();
+                }
+
+                if (Math.Abs(Input.mouseScrollDelta.y) > 0.01f)
+                {
+                    zoomAtual = Mathf.Clamp(zoomAtual - Input.mouseScrollDelta.y * 1.5f, ZoomPadrao, ZoomMaximo);
+                    AplicarZoom(zoomAtual);
+                }
             }
         }
 
