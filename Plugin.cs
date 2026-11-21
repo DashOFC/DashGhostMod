@@ -3,6 +3,7 @@ using System.Text;
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using HarmonyLib;
+using Hazel;
 using InnerNet;
 using UnityEngine;
 
@@ -52,13 +53,13 @@ namespace DashGhostMod
         private static string ObterNomeDaFuncao(PlayerControl player)
         {
             if (player.Data.Role == null)
-                return player.Data.IsImpostor ? "Impostor" : "Tripulante";
+                return "Tripulante";
 
             string niceName = player.Data.Role.NiceName;
             if (!string.IsNullOrEmpty(niceName) && niceName != "STRMISS")
                 return niceName;
 
-            return player.Data.Role.Role.ToString();
+            return player.Data.Role.IsImpostor ? "Impostor" : player.Data.Role.Role.ToString();
         }
 
         public static void EnviarChatPrivado(PlayerControl destinatario, string mensagem)
