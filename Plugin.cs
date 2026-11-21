@@ -79,7 +79,6 @@ namespace DashGhostMod
             AmongUsClient.Instance.FinishRpcImmediately(writer);
         }
 
-        // Destrava movimento fantasma caso o toque de pinça fique preso
         public static void PararMovimentoFantasma()
         {
             var local = PlayerControl.LocalPlayer;
@@ -109,8 +108,7 @@ namespace DashGhostMod
             __instance.freeChatField.Clear();
             __instance.quickChatMenu.Clear();
 
-            if (Plugin.EhSalaDoDash() &&
-                PlayerControl.LocalPlayer != null &&
+            if (PlayerControl.LocalPlayer != null &&
                 PlayerControl.LocalPlayer.Data != null &&
                 PlayerControl.LocalPlayer.Data.IsDead)
             {
@@ -164,7 +162,9 @@ namespace DashGhostMod
             bool emTask = Minigame.Instance != null;
             bool chatAberto = __instance.Chat != null && __instance.Chat.IsOpenOrOpening;
 
-            if (!estaMorto || !Plugin.EhSalaDoDash() || emReuniao || emTask || chatAberto)
+            // Zoom funciona para qualquer jogador quando estiver morto (na sua sala ou partida livre),
+            // resetando ao normal apenas em reunião, task, chat aberto ou se estiver vivo
+            if (!estaMorto || emReuniao || emTask || chatAberto)
             {
                 estavaEmPinca = false;
                 if (Math.Abs(zoomAtual - ZoomPadrao) > 0.01f)
@@ -180,7 +180,6 @@ namespace DashGhostMod
                 Touch dedo0 = Input.GetTouch(0);
                 Touch dedo1 = Input.GetTouch(1);
 
-                // Se algum dos dois dedos levantou ou foi cancelado, encerra a pinça e zera velocidade residual
                 if (dedo0.phase == TouchPhase.Ended || dedo0.phase == TouchPhase.Canceled ||
                     dedo1.phase == TouchPhase.Ended || dedo1.phase == TouchPhase.Canceled)
                 {
@@ -204,7 +203,6 @@ namespace DashGhostMod
             }
             else
             {
-                // Ao soltar os dedos da pinça, garante que o personagem não continue deslizando sozinho
                 if (estavaEmPinca)
                 {
                     estavaEmPinca = false;
