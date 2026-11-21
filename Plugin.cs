@@ -1,222 +1,221 @@
 using System;
-using System.Text;
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
 using HarmonyLib;
-using Hazel;
-using InnerNet;
 using UnityEngine;
 
 namespace DashGhostMod
 {
-    [BepInPlugin("com.dash.ghostmod", "DashGhostMod", "1.0.0")]
+    [BepInPlugin("com.dash.ghostmod", "DashGhostMod", "1.1.0")]
     public class Plugin : BasePlugin
     {
-        public const string DonoFriendCode = "squishyrag#2321";
+        public static bool ZoomFantasmaAtivo = true;
+        public static float NivelZoomAtual = 1f;
+
+        public const float ZoomMinimo = 1f;
+        public const float ZoomMaximo = 10f;
+        public const float VelocidadeScrollPC = 1.2f;
+        public const float SensibilidadePincaMobile = 0.015f;
+
+        private static float tamanhoCameraOriginal = -1f;
 
         public override void Load()
         {
             var harmony = new Harmony("com.dash.ghostmod");
             harmony.PatchAll();
-            Log.LogInfo("DashGhostMod v1.0.0 carregado!");
+            Log.LogInfo("DashGhostMod v1.1.0 (PC + Mobile) carregado!");
         }
 
-        public static bool EhSalaDoDash()
+        public static bool EstaMorto()
         {
-            if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost)
+            return PlayerControl.LocalPlayer != null
+                && PlayerControl.LocalPlayer.Data != null
+                && PlayerControl.LocalPlayer.Data.IsDead;
+        }
+
+        public static bool PodeUsarZoomAgora()
+        {
+            if (!ZoomFantasmaAtivo || !EstaMorto())
                 return false;
 
-            if (PlayerControl.LocalPlayer == null)
+            if (MeetingHud.Instance != null)
                 return false;
 
-            string fc = PlayerControl.LocalPlayer.FriendCode ?? "";
-            return fc.Equals(DonoFriendCode, StringComparison.OrdinalIgnoreCase);
+            if (Minigame.Instance != null)
+                return false;
+
+            if (HudManager.Instance != null && HudManager.Instance.Chat != null && HudManager.Instance.Chat.IsOpenOrOpening)
+                return false;
+
+            return true;
         }
 
-        public static string GerarListaFuncoes()
+        public static void ResetarZoom()
         {
-            StringBuilder sb = new StringBuilder();
-            sb.AppendLine("<b>[Funções da Partida]</b>");
+            NivelZoomAtual = ZoomMinimo;
+            AplicarZoomNaCamera();
+        }
 
-            foreach (var player in PlayerControl.AllPlayerControls)
+        public static void AtualizarZoom()
+        {
+            if (Camera.main == null)
+                return;
+
+            if (tamanhoCameraOriginal <= 0f)
+                tamanhoCameraOriginal = Camera.main.orthographicSize;
+
+            if (!PodeUsarZoomAgora())
             {
-                if (player == null || player.Data == null) continue;
-
-                string nome = player.Data.PlayerName;
-                string funcao = ObterNomeDaFuncao(player);
-                sb.AppendLine($"{nome} - {funcao}");
+                if (Mathf.Abs(NivelZoomAtual - ZoomMinimo) > 0.01f)
+                    ResetarZoom();
+                return;
             }
 
-            return sb.ToString().TrimEnd();
-        }
+            bool alterouZoom = false;
 
-        private static string ObterNomeDaFuncao(PlayerControl player)
-        {
-            if (player.Data.Role == null)
-                return "Tripulante";
-
-            string niceName = player.Data.Role.NiceName;
-            if (!string.IsNullOrEmpty(niceName) && niceName != "STRMISS")
-                return niceName;
-
-            return player.Data.Role.IsImpostor ? "Impostor" : player.Data.Role.Role.ToString();
-        }
-
-        public static void EnviarChatPrivado(PlayerControl destinatario, string mensagem)
-        {
-            if (AmongUsClient.Instance == null || destinatario == null) return;
-
-            int clientId = AmongUsClient.Instance.GetClientIdFromCharacter(destinatario);
-            if (clientId < 0) return;
-
-            MessageWriter writer = AmongUsClient.Instance.StartRpcImmediately(
-                destinatario.NetId,
-                (byte)RpcCalls.SendChat,
-                SendOption.Reliable,
-                clientId
-            );
-            writer.Write(mensagem);
-            AmongUsClient.Instance.FinishRpcImmediately(writer);
-        }
-
-        public static void PararMovimentoFantasma()
-        {
-            var local = PlayerControl.LocalPlayer;
-            if (local == null) return;
-
-            if (local.MyPhysics != null && local.MyPhysics.body != null)
+            // 1. Controle no PC: Scroll do Mouse
+            float scroll = Input.mouseScrollDelta.y;
+            if (Mathf.Approximately(scroll, 0f))
             {
-                local.MyPhysics.body.velocity = Vector2.zero;
+                try { scroll = Input.GetAxis("Mouse ScrollWheel") * 10f; } catch { }
             }
+
+            if (!Mathf.Approximately(scroll, 0f))
+            {
+                // Scroll para baixo (negativo) afasta a câmera (aumenta o alcance de visão)
+                // Scroll para cima (positivo) aproxima a câmera
+                NivelZoomAtual -= scroll * VelocidadeScrollPC;
+                alterouZoom = true;
+            }
+
+            // 2. Controle no Celular: Pinça com 2 dedos
+            if (Input.touchCount == 2)
+            {
+                Touch toque0 = Input.GetTouch(0);
+                Touch toque1 = Input.GetTouch(1);
+
+                Vector2 posAnterior0 = toque0.position - toque0.deltaPosition;
+                Vector2 posAnterior1 = toque1.position - toque1.deltaPosition;
+
+                float distAnterior = (posAnterior0 - posAnterior1).magnitude;
+                float distAtual = (toque0.position - toque1.position).magnitude;
+                float diferenca = distAtual - distAnterior;
+
+                if (!Mathf.Approximately(diferenca, 0f))
+                {
+                    // Fechar os dedos afasta a câmera; abrir aproxima
+                    NivelZoomAtual -= diferenca * SensibilidadePincaMobile;
+                    alterouZoom = true;
+                }
+            }
+
+            if (alterouZoom)
+            {
+                NivelZoomAtual = Mathf.Clamp(NivelZoomAtual, ZoomMinimo, ZoomMaximo);
+                AplicarZoomNaCamera();
+            }
+        }
+
+        public static void AplicarZoomNaCamera()
+        {
+            if (Camera.main == null)
+                return;
+
+            if (tamanhoCameraOriginal <= 0f)
+                tamanhoCameraOriginal = Camera.main.orthographicSize;
+
+            float novoTamanho = tamanhoCameraOriginal * NivelZoomAtual;
+            Camera.main.orthographicSize = novoTamanho;
+
+            if (HudManager.Instance != null && HudManager.Instance.UICamera != null)
+            {
+                // Mantém a UI no tamanho normal para os botões e o chat não encolherem
+                HudManager.Instance.ShadowQuad?.gameObject.SetActive(NivelZoomAtual <= 1.05f);
+            }
+        }
+
+        public static void MostrarMensagemLocal(ChatController chat, string mensagem)
+        {
+            if (chat == null || PlayerControl.LocalPlayer == null)
+                return;
+
+            chat.AddChat(PlayerControl.LocalPlayer, mensagem);
         }
     }
 
+    // Atualiza o zoom a cada frame durante a partida
+    [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
+    public static class HudManagerZoomPatch
+    {
+        public static void Postfix()
+        {
+            Plugin.AtualizarZoom();
+        }
+    }
+
+    // Evita que o fantasma fique deslizando/andando sozinho enquanto faz pinça no celular
+    [HarmonyPatch(typeof(PlayerPhysics), nameof(PlayerPhysics.FixedUpdate))]
+    public static class GhostMovementStabilizerPatch
+    {
+        public static bool Prefix(PlayerPhysics __instance)
+        {
+            if (__instance == null || __instance.myPlayer == null || !__instance.myPlayer.AmOwner)
+                return true;
+
+            if (Plugin.EstaMorto() && Input.touchCount >= 2 && __instance.body != null)
+            {
+                __instance.body.velocity = Vector2.zero;
+                return false;
+            }
+
+            return true;
+        }
+    }
+
+    // Comando /role no chat (visível apenas para você)
     [HarmonyPatch(typeof(ChatController), nameof(ChatController.SendChat))]
-    public static class LocalSendChatPatch
+    public static class GhostRoleCommandPatch
     {
         public static bool Prefix(ChatController __instance)
         {
+            if (__instance == null || __instance.freeChatField == null)
+                return true;
+
             string texto = __instance.freeChatField.Text.Trim();
             if (!texto.Equals("/role", StringComparison.OrdinalIgnoreCase))
                 return true;
 
             __instance.freeChatField.Clear();
-            __instance.quickChatMenu.Clear();
+            if (__instance.quickChatMenu != null)
+                __instance.quickChatMenu.Clear();
 
-            if (PlayerControl.LocalPlayer != null &&
-                PlayerControl.LocalPlayer.Data != null &&
-                PlayerControl.LocalPlayer.Data.IsDead)
+            if (!Plugin.EstaMorto())
             {
-                string lista = Plugin.GerarListaFuncoes();
-                __instance.AddChat(PlayerControl.LocalPlayer, lista);
+                Plugin.MostrarMensagemLocal(
+                    __instance,
+                    "<b>[DashGhostMod]</b> O comando <b>/role</b> só funciona depois que você morrer."
+                );
+                return false;
             }
 
-            return false;
-        }
-    }
-
-    [HarmonyPatch(typeof(ChatController), nameof(ChatController.AddChat))]
-    public static class RemoteAddChatPatch
-    {
-        public static bool Prefix(PlayerControl sourcePlayer, string chatText)
-        {
-            if (sourcePlayer == null || sourcePlayer.Data == null || string.IsNullOrWhiteSpace(chatText))
-                return true;
-
-            if (PlayerControl.LocalPlayer != null && sourcePlayer.PlayerId == PlayerControl.LocalPlayer.PlayerId)
-                return true;
-
-            if (!chatText.Trim().Equals("/role", StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            if (Plugin.EhSalaDoDash() && sourcePlayer.Data.IsDead)
+            Plugin.ZoomFantasmaAtivo = !Plugin.ZoomFantasmaAtivo;
+            if (!Plugin.ZoomFantasmaAtivo)
             {
-                string lista = Plugin.GerarListaFuncoes();
-                Plugin.EnviarChatPrivado(sourcePlayer, lista);
-            }
-
-            return false;
-        }
-    }
-
-    [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
-    public static class GhostPinchZoomPatch
-    {
-        private const float ZoomPadrao = 3.0f;
-        private const float ZoomMaximo = 30.0f;
-        private static float zoomAtual = ZoomPadrao;
-        private static bool estavaEmPinca = false;
-
-        public static void Postfix(HudManager __instance)
-        {
-            if (PlayerControl.LocalPlayer == null || PlayerControl.LocalPlayer.Data == null)
-                return;
-
-            bool estaMorto = PlayerControl.LocalPlayer.Data.IsDead;
-            bool emReuniao = MeetingHud.Instance != null;
-            bool emTask = Minigame.Instance != null;
-            bool chatAberto = __instance.Chat != null && __instance.Chat.IsOpenOrOpening;
-
-            if (!estaMorto || emReuniao || emTask || chatAberto)
-            {
-                estavaEmPinca = false;
-                if (Math.Abs(zoomAtual - ZoomPadrao) > 0.01f)
-                {
-                    zoomAtual = ZoomPadrao;
-                    AplicarZoom(ZoomPadrao);
-                }
-                return;
-            }
-
-            if (Input.touchCount >= 2)
-            {
-                Touch dedo0 = Input.GetTouch(0);
-                Touch dedo1 = Input.GetTouch(1);
-
-                if (dedo0.phase == TouchPhase.Ended || dedo0.phase == TouchPhase.Canceled ||
-                    dedo1.phase == TouchPhase.Ended || dedo1.phase == TouchPhase.Canceled)
-                {
-                    estavaEmPinca = false;
-                    Plugin.PararMovimentoFantasma();
-                    return;
-                }
-
-                Vector2 posAnterior0 = dedo0.position - dedo0.deltaPosition;
-                Vector2 posAnterior1 = dedo1.position - dedo1.deltaPosition;
-
-                float distanciaAnterior = (posAnterior0 - posAnterior1).magnitude;
-                float distanciaAtual = (dedo0.position - dedo1.position).magnitude;
-
-                float diferenca = distanciaAnterior - distanciaAtual;
-
-                estavaEmPinca = true;
-                zoomAtual = Mathf.Clamp(zoomAtual + diferenca * 0.03f, ZoomPadrao, ZoomMaximo);
-                AplicarZoom(zoomAtual);
-                Plugin.PararMovimentoFantasma();
+                Plugin.ResetarZoom();
+                Plugin.MostrarMensagemLocal(
+                    __instance,
+                    "<b>[DashGhostMod]</b> Zoom de fantasma desativado (1x)."
+                );
             }
             else
             {
-                if (estavaEmPinca)
-                {
-                    estavaEmPinca = false;
-                    Plugin.PararMovimentoFantasma();
-                }
-
-                if (Math.Abs(Input.mouseScrollDelta.y) > 0.01f)
-                {
-                    zoomAtual = Mathf.Clamp(zoomAtual - Input.mouseScrollDelta.y * 1.5f, ZoomPadrao, ZoomMaximo);
-                    AplicarZoom(zoomAtual);
-                }
+                Plugin.MostrarMensagemLocal(
+                    __instance,
+                    "<b>[DashGhostMod]</b> Zoom de fantasma ativado! Use o <b>scroll do mouse</b> (PC) ou <b>pinça na tela</b> (Celular)."
+                );
             }
-        }
 
-        private static void AplicarZoom(float tamanhoCamera)
-        {
-            if (Camera.main != null)
-                Camera.main.orthographicSize = tamanhoCamera;
-
-            if (HudManager.Instance != null && HudManager.Instance.UICamera != null)
-                HudManager.Instance.UICamera.orthographicSize = ZoomPadrao;
+            return false;
         }
     }
 }
